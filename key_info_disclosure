@@ -1,0 +1,113 @@
+import pandas as pd 
+from datetime import datetime, timedelta
+import dart_fss as dart
+import time
+from datetime import date
+import telepot 
+
+
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
+
+run_count = 0
+api_key = '**************************************'
+
+# #Telegram mc and token number setting 
+MezzanineChat = -********
+EquityChat = -********
+bhChat = -********
+#mc = ********
+token = '**************************************'
+bot = telepot.Bot(token)
+info = bot.getMe()
+
+
+
+
+t_date = date.today().strftime('%Y%m%d')
+now = datetime.now()
+
+column_name_mapping = {
+    'rcp_no': '보고서 번호',
+    'corp_code': '고유번호',
+    'stock_code' : '종목코드',
+    'corp_cls' : '법인구분',
+    'corp_name': '회사명',
+    'report_nm' : '리포트',
+    'flr_nm' : '공시 제출인명',
+    'rcept_dt' : '접수일자',
+    'rm' : '비고'
+}
+
+
+# Function to get data and to convert into DataFrame
+def get_data():
+    try:
+        dart.set_api_key(api_key=api_key)
+        report = dart.filings.search(bgn_de=t_date, end_de=t_date, pblntf_ty='B')
+        report_list = report.report_list
+        if not report_list:
+            return pd.DataFrame(columns=column_name_mapping.values())
+        dict_list = [item.to_dict() for item in report_list]
+        df = pd.DataFrame(dict_list)
+        df = df.rename(columns=column_name_mapping)
+        print("get_data_Run")
+        return df
+    except Exception as e:
+        print(f"Error occurred while fetching data: {e}")
+        return pd.DataFrame(columns=column_name_mapping.values())
+
+# Function to check for updates or new stocks
+def check_for_updates(previous_data):
+    try:
+        current_data = get_data()
+        if current_data.empty:
+            return previous_data  # If current_data is empty, return previous_data
+
+        new_rcp_no = list(set(current_data['보고서 번호']) - set(previous_data['보고서 번호']))
+        if new_rcp_no:
+            # New data with new rcp_no has been created
+            for rcp_no in new_rcp_no:
+                new_data = current_data[current_data['보고서 번호'] == rcp_no]
+                print("new_rcp_no Run")
+                bot_msg(new_data)
+                display(new_data)  # Replace display with print to show the new data
+
+        return current_data
+
+    except Exception as e:
+        print(f"Error occurred while checking for updates: {e}")
+        return previous_data
+
+
+# Initialize the previous_data variable with the initial data
+def bot_msg(df):
+    tdate = df.iloc[0]['접수일자']
+    ttime = datetime.now().strftime("%H:%M:%S")
+    cmp_name = df.iloc[0]['회사명']
+    rep_name = df.iloc[0]['리포트']
+    rcp_num = df.iloc[0]['보고서 번호']
+
+    list_tmp = f'{tdate}  {ttime}\n기업명: {cmp_name}\n보고서명: {rep_name}\nhttps://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcp_num}'
+
+    if '유상증자결정' in rep_name or '유무상증자결정' in rep_name:
+        bot.sendMessage(chat_id = EquityChat , text =''.join(list_tmp))
+    elif '전환사채권발행결정'in rep_name or '신주인수구권부사채권발행결정' in rep_name or '교환사채권발행결정' in rep_name:
+        bot.sendMessage(chat_id = MezzanineChat , text =''.join(list_tmp))
+    elif '회사분할합병결정' in rep_name or '회사분할결정' in rep_name or '회사합병결정' in rep_name:
+        bot.sendMessage(chat_id = bhChat , text =''.join(list_tmp))
+
+previous_data = get_data()
+
+while True:
+    #Check for updates and get the updated data if any
+
+    display(previous_data)
+    print("while loop display")
+    run_count += 1
+    previous_data = check_for_updates(previous_data)
+    #bot_msg(previous_data)
+    print('RunCount:' + str(run_count))
+    #Wait for 1 minute before refreshing
+    time.sleep(60)
